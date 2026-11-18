@@ -5,14 +5,17 @@ export type Modo = 'light' | 'dark'
 /** Colores de datos por modo: paleta de referencia validada (skill dataviz, palette.md). */
 export const PALETA = {
   light: {
-    s: ['#2a78d6', '#eb6834', '#1baf7a'],
+    s: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'],
     ordinal: ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'],
+    // secuencial: bajo -> alto (el valor bajo se funde con la superficie)
+    secuencial: ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#184f95', '#0d366b'],
     surface: '#fcfcfb', ink: '#0b0b0b', ink2: '#52514e', muted: '#898781', grid: '#e1e0d9', axis: '#c3c2b7',
     good: '#006300', critical: '#d03b3b',
   },
   dark: {
-    s: ['#3987e5', '#d95926', '#199e70'],
+    s: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181'],
     ordinal: ['#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4'],
+    secuencial: ['#0d366b', '#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'],
     surface: '#1a1a19', ink: '#f0efec', ink2: '#c3c2b7', muted: '#898781', grid: '#2c2c2a', axis: '#383835',
     good: '#0ca30c', critical: '#d03b3b',
   },

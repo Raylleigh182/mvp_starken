@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { animate, motion, useInView } from 'motion/react'
-import type { Dashboard } from '../lib/api'
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import type { Dashboard, Kpis } from '../lib/api'
 import { dec, num, peso, pesoCorto, pct } from '../lib/format'
 
 /** Número que cuenta hasta su valor al entrar en pantalla. */
@@ -27,7 +28,27 @@ const fPeso = (v: number) => pesoCorto(Math.round(v))
 const fPct = (v: number) => pct(Math.round(v * 10) / 10)
 const fDec = (v: number) => dec(v)
 
-export function Hero({ k }: { k: Dashboard['kpis'] }) {
+/** Variación vs periodo anterior: ícono + texto + color (nunca solo color). */
+function Delta({ actual, previo, tipo, mejor = 'arriba' }: {
+  actual: number | null | undefined; previo: number | null | undefined
+  tipo: 'pct' | 'pp' | 'abs'; mejor?: 'arriba' | 'abajo'
+}) {
+  if (actual == null || previo == null || (tipo === 'pct' && previo === 0)) return null
+  const d = tipo === 'pct' ? ((actual - previo) / previo) * 100 : actual - previo
+  const neutro = Math.abs(d) < (tipo === 'abs' ? 0.01 : 0.05)
+  const sube = d > 0
+  const bueno = neutro ? null : (sube === (mejor === 'arriba'))
+  const Icon = neutro ? Minus : sube ? TrendingUp : TrendingDown
+  const txt = tipo === 'pct' ? `${sube ? '+' : ''}${dec(d)}%` : tipo === 'pp' ? `${sube ? '+' : ''}${dec(d)} pp` : `${sube ? '+' : ''}${d.toFixed(2).replace('.', ',')}`
+  const cls = bueno == null ? 'text-muted' : bueno ? 'text-[#006300] dark:text-[#0ca30c]' : 'text-[#d03b3b]'
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${cls}`} title="Variación respecto del periodo anterior de igual duración">
+      <Icon size={13} aria-hidden /> {txt} <span className="font-normal text-muted">vs anterior</span>
+    </span>
+  )
+}
+
+export function Hero({ k, prev }: { k: Dashboard['kpis']; prev?: Kpis | null }) {
   return (
     <div className="grid gap-4 lg:grid-cols-12">
       <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -37,22 +58,27 @@ export function Hero({ k }: { k: Dashboard['kpis'] }) {
         <p className="mt-4 text-[clamp(3rem,9vw,7.5rem)] font-semibold leading-[0.9] tracking-[-0.045em] text-ink">
           <Contador value={k.ingresos} fmt={fPeso} />
         </p>
+        {prev && <div className="mt-3"><Delta actual={k.ingresos} previo={prev.ingresos} tipo="pct" /></div>}
         <p className="mt-4 max-w-md text-sm text-ink-2">
           {peso(k.ingresos)} en <strong className="font-medium text-ink">{num(k.pedidos)}</strong> envíos, con un ticket promedio de{' '}
           <strong className="font-medium text-ink">{peso(k.ticket_promedio)}</strong>.
         </p>
       </motion.div>
       <div className="grid grid-cols-2 gap-4 lg:col-span-5">
-        <Stat label="Pedidos" value={k.pedidos} fmt={fInt} sub={`${num(k.en_curso)} en curso`} i={1} />
-        <Stat label="Cumplimiento SLA" value={k.sla_pct} fmt={fPct} sub="de entregados a tiempo" i={2} />
-        <Stat label="Con incidencia" value={k.incidencias_pct} fmt={fPct} sub="registraron un motivo" i={3} />
-        <Stat label="Calificación" value={k.calificacion} fmt={fDec} sub={`de 5 · ${dec(k.dias_transito)} días hábiles prom.`} i={4} />
+        <Stat label="Pedidos" value={k.pedidos} fmt={fInt} sub={`${num(k.en_curso)} en curso`} i={1}
+          delta={prev && <Delta actual={k.pedidos} previo={prev.pedidos} tipo="pct" />} />
+        <Stat label="Cumplimiento SLA" value={k.sla_pct} fmt={fPct} sub="de entregados a tiempo" i={2}
+          delta={prev && <Delta actual={k.sla_pct} previo={prev.sla_pct} tipo="pp" />} />
+        <Stat label="Con incidencia" value={k.incidencias_pct} fmt={fPct} sub="registraron un motivo" i={3}
+          delta={prev && <Delta actual={k.incidencias_pct} previo={prev.incidencias_pct} tipo="pp" mejor="abajo" />} />
+        <Stat label="Calificación" value={k.calificacion} fmt={fDec} sub={`de 5 · ${dec(k.dias_transito)} días hábiles prom.`} i={4}
+          delta={prev && <Delta actual={k.calificacion} previo={prev.calificacion} tipo="abs" />} />
       </div>
     </div>
   )
 }
 
-function Stat({ label, value, fmt, sub, i }: { label: string; value: number | null; fmt: (v: number) => string; sub: string; i: number }) {
+function Stat({ label, value, fmt, sub, i, delta }: { label: string; value: number | null; fmt: (v: number) => string; sub: string; i: number; delta?: ReactNode }) {
   return (
     <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.08 * i, ease: [0.22, 1, 0.36, 1] }}
       className="flex flex-col justify-between rounded-3xl border border-line bg-surface p-5">
@@ -62,6 +88,7 @@ function Stat({ label, value, fmt, sub, i }: { label: string; value: number | nu
           {value == null ? '—' : <Contador value={value} fmt={fmt} />}
         </p>
         <p className="mt-1.5 text-xs text-ink-2">{sub}</p>
+        {delta && <div className="mt-2">{delta}</div>}
       </div>
     </motion.div>
   )

@@ -6,16 +6,18 @@ type Col<T> = { key: keyof T; label: string; fmt?: (v: any) => string; align?: '
 
 /** Tarjeta de gráfico con vista de tabla equivalente (accesibilidad). */
 export function ChartCard<T extends Record<string, any>>({
-  kicker, title, note, children, rows, cols, className = '', delay = 0,
+  kicker, title, note, children, rows, cols, className = '', delay = 0, controls, busy = false,
 }: {
   kicker: string
-  title: string
+  title: ReactNode
   note?: ReactNode
   children: ReactNode
   rows?: T[]
   cols?: Col<T>[]
   className?: string
   delay?: number
+  controls?: ReactNode
+  busy?: boolean
 }) {
   const [tabla, setTabla] = useState(false)
   return (
@@ -43,7 +45,8 @@ export function ChartCard<T extends Record<string, any>>({
           </button>
         )}
       </header>
-      <div className="flex-1">
+      {controls && <div className="-mt-1 mb-5 flex flex-wrap items-center gap-2">{controls}</div>}
+      <div className={`flex-1 transition-opacity duration-300 ${busy ? 'opacity-50' : ''}`} aria-busy={busy}>
         {tabla && rows && cols ? <DataTable rows={rows} cols={cols} /> : children}
       </div>
       {note && <p className="mt-4 text-xs leading-relaxed text-muted">{note}</p>}

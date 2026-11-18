@@ -1,23 +1,65 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { motion } from 'motion/react'
-import { Moon, Sun, ArrowDownRight } from 'lucide-react'
-import { getDashboard, getFiltros, type Seleccion } from './lib/api'
-import { usePaleta, useToggleTema } from './lib/theme'
-import { num, pct, peso, pesoCorto, dec, mesLargo, fechaLarga } from './lib/format'
+import { Moon, Sun, ArrowDownRight, Link2, Check } from 'lucide-react'
+import { getDashboard, getFiltros, getKpis, type Filtros, type Seleccion } from './lib/api'
+import { useToggleTema } from './lib/theme'
+import { num, pct, peso, dec, fechaLarga, addDays } from './lib/format'
 import { FilterBar, rangoPreset, type Preset } from './components/Filters'
 import { Hero, Ticker } from './components/Kpis'
 import { ChartCard } from './components/Card'
-import { MonthlyBars, RankedBars, RatingBars, SegmentedBar, WeeklyArea } from './components/Charts'
+import { RatingBars, SegmentedBar } from './components/Charts'
+import { Evolution } from './components/Evolution'
+import { Explorer } from './components/Explorer'
+import { Heatmap } from './components/Heatmap'
 import { Tracker } from './components/Tracker'
 
 const VACIO: Seleccion = { desde: null, hasta: null, region: null, servicio: null, canal: null }
 
+/* ---------- Estado de filtros en la URL (vistas compartibles) ---------- */
+function leerUrl(): { sel: Seleccion; preset: Preset } {
+  const q = new URLSearchParams(location.search)
+  const n = (k: string) => (q.get(k) ? Number(q.get(k)) : null)
+  const iso = (k: string) => (/^\d{4}-\d{2}-\d{2}$/.test(q.get(k) ?? '') ? q.get(k) : null)
+  const preset = (['todo', '30', '90', 'mes', 'custom'].includes(q.get('p') ?? '') ? q.get('p') : 'todo') as Preset
+  return { preset, sel: { desde: iso('desde'), hasta: iso('hasta'), region: n('region'), servicio: n('servicio'), canal: n('canal') } }
+}
+function escribirUrl(sel: Seleccion, preset: Preset) {
+  const q = new URLSearchParams()
+  if (preset !== 'todo') q.set('p', preset)
+  if (preset === 'custom') { if (sel.desde) q.set('desde', sel.desde); if (sel.hasta) q.set('hasta', sel.hasta) }
+  if (sel.region != null) q.set('region', String(sel.region))
+  if (sel.servicio != null) q.set('servicio', String(sel.servicio))
+  if (sel.canal != null) q.set('canal', String(sel.canal))
+  const s = q.toString()
+  history.replaceState(null, '', s ? `?${s}` : location.pathname)
+}
+
+/** Periodo anterior de igual duración (null si no hay datos previos). */
+function periodoAnterior(sel: Seleccion, f: Filtros | undefined): Seleccion | null {
+  if (!f) return null
+  const desde = sel.desde ?? f.fecha_min
+  const hasta = sel.hasta ?? f.fecha_max
+  if (desde <= f.fecha_min) return null
+  const dias = Math.round((Date.parse(hasta) - Date.parse(desde)) / 864e5) + 1
+  return { ...sel, desde: addDays(desde, -dias), hasta: addDays(desde, -1) }
+}
+
 export default function App() {
   const { modo, toggle } = useToggleTema()
+  const inicial = useMemo(leerUrl, [])
   const filtrosQ = useQuery({ queryKey: ['filtros'], queryFn: getFiltros, staleTime: Infinity })
-  const [sel, setSel] = useState<Seleccion>(VACIO)
-  const [preset, setPreset] = useState<Preset>('todo')
+  const [sel, setSel] = useState<Seleccion>(inicial.sel)
+  const [preset, setPreset] = useState<Preset>(inicial.preset)
+  const [copiado, setCopiado] = useState(false)
+  const f = filtrosQ.data
+
+  // Al cargar con un preset relativo en la URL, recalcular sus fechas
+  useEffect(() => {
+    if (f && preset !== 'todo' && preset !== 'custom') setSel((s) => ({ ...s, ...rangoPreset(preset, f) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f])
+  useEffect(() => escribirUrl(sel, preset), [sel, preset])
 
   const dashQ = useQuery({
     queryKey: ['dashboard', sel],
@@ -25,24 +67,35 @@ export default function App() {
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   })
+  const prevSel = useMemo(() => periodoAnterior(sel, f), [sel, f])
+  const prevQ = useQuery({
+    queryKey: ['kpis', prevSel],
+    queryFn: () => getKpis(prevSel!),
+    enabled: !!prevSel,
+    staleTime: 60_000,
+  })
   const d = dashQ.data
-  const f = filtrosQ.data
 
-  const periodo = useMemo(() => {
-    if (!f) return ''
-    return `${fechaLarga(sel.desde ?? f.fecha_min)} — ${fechaLarga(sel.hasta ?? f.fecha_max)}`
-  }, [f, sel.desde, sel.hasta])
+  const periodo = f ? `${fechaLarga(sel.desde ?? f.fecha_min)} — ${fechaLarga(sel.hasta ?? f.fecha_max)}` : ''
+  const compartir = async () => {
+    try { await navigator.clipboard.writeText(location.href); setCopiado(true); setTimeout(() => setCopiado(false), 1800) } catch { /* sin portapapeles */ }
+  }
+  const kpisGenerales = d ? {
+    pedidos: d.kpis.pedidos, ingresos: d.kpis.ingresos, ticket_promedio: d.kpis.ticket_promedio, sla_pct: d.kpis.sla_pct,
+    incidencias_pct: d.kpis.incidencias_pct, calificacion: d.kpis.calificacion, dias_transito: d.kpis.dias_transito,
+  } : undefined
 
   return (
     <div className="min-h-dvh overflow-x-clip">
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8">
         {/* ---------- Encabezado ---------- */}
         <nav className="flex items-center justify-between py-5">
-          <a href="#" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-ink">
+          <a href="./" className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-ink">
             <span className="grid size-7 place-items-center rounded-lg bg-accent text-[13px] font-bold text-white">S</span>
             Pulso Logístico
           </a>
           <div className="flex items-center gap-2">
+            <a href="#explorar" className="hidden rounded-full border border-line px-4 py-2 text-sm text-ink-2 transition hover:text-ink md:block">Explorar</a>
             <a href="#rastreo" className="hidden rounded-full border border-line px-4 py-2 text-sm text-ink-2 transition hover:text-ink sm:block">Rastrear envío</a>
             <button onClick={toggle} aria-label={modo === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
               className="grid size-9 place-items-center rounded-full border border-line text-ink-2 transition hover:text-ink">
@@ -66,7 +119,7 @@ export default function App() {
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
             className="mt-8 flex flex-wrap items-end justify-between gap-6">
             <p className="max-w-xl text-base text-ink-2 sm:text-lg">
-              Panel público de la operación de encomiendas en Chile: volumen, ingresos, cumplimiento de plazos y experiencia de cliente, filtrable en tiempo real.
+              Panel público de la operación de encomiendas en Chile. Elige la métrica, la granularidad y el corte de cada gráfico, y comparte la vista exacta con un enlace.
             </p>
             <a href="#panel" className="flex items-center gap-2 text-sm font-medium text-ink">Explorar el panel <ArrowDownRight size={16} /></a>
           </motion.div>
@@ -94,40 +147,25 @@ export default function App() {
             <div className="rounded-3xl border border-line bg-surface p-10 text-center text-ink-2">No hay envíos para esta combinación de filtros.</div>
           ) : (
             <div className={`space-y-4 transition-opacity duration-300 ${dashQ.isPlaceholderData ? 'opacity-60' : ''}`}>
-              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">Periodo · {periodo}</p>
-              <Hero k={d.kpis} />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
+                  Periodo · {periodo}{prevSel && <span className="normal-case tracking-normal"> · comparado con {fechaLarga(prevSel.desde!)} — {fechaLarga(prevSel.hasta!)}</span>}
+                </p>
+                <button onClick={compartir} className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs text-ink-2 transition hover:text-ink">
+                  {copiado ? <Check size={13} /> : <Link2 size={13} />} {copiado ? 'Enlace copiado' : 'Copiar enlace a esta vista'}
+                </button>
+              </div>
+              <Hero k={d.kpis} prev={prevSel ? prevQ.data : null} />
 
-              <div className="grid gap-4 lg:grid-cols-12">
-                <ChartCard className="lg:col-span-8" kicker="Volumen" title="Pedidos emitidos por semana"
-                  note="La primera y la última semana del periodo pueden estar incompletas."
-                  rows={d.semanal} cols={[
-                    { key: 'semana', label: 'Semana', fmt: fechaLarga },
-                    { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                    { key: 'sla_pct', label: 'SLA', fmt: pct, align: 'right' },
-                  ]}>
-                  <WeeklyArea data={d.semanal} />
-                </ChartCard>
-                <ChartCard className="lg:col-span-4" kicker="Experiencia" title="Calificación de clientes" delay={0.05}
-                  note={`${num(d.calificaciones.reduce((a, b) => a + b.pedidos, 0))} envíos calificados · promedio ${dec(d.kpis.calificacion)} de 5`}
-                  rows={d.calificaciones} cols={[
-                    { key: 'estrellas', label: 'Estrellas', fmt: (v) => `${v}★` },
-                    { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                  ]}>
-                  <RatingBars data={d.calificaciones} />
-                </ChartCard>
+              <Evolution sel={sel} />
+
+              <div id="explorar" className="grid scroll-mt-24 gap-4 lg:grid-cols-12">
+                <div className="lg:col-span-6"><Explorer sel={sel} kpis={kpisGenerales} /></div>
+                <div className="lg:col-span-6"><Heatmap sel={sel} /></div>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-12">
-                <ChartCard className="lg:col-span-7" kicker="Ingresos" title="Facturación mensual con IVA"
-                  note="El último mes puede estar incompleto según el periodo."
-                  rows={d.mensual} cols={[
-                    { key: 'mes', label: 'Mes', fmt: mesLargo },
-                    { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                    { key: 'ingresos', label: 'Ingresos', fmt: peso, align: 'right' },
-                  ]}>
-                  <MonthlyBars data={d.mensual} />
-                </ChartCard>
-                <ChartCard className="lg:col-span-5" kicker="Mix" title="Pedidos por tipo de servicio" delay={0.05}
+                <ChartCard className="lg:col-span-7" kicker="Mix" title="Pedidos por tipo de servicio"
                   rows={d.servicios} cols={[
                     { key: 'nombre', label: 'Servicio' },
                     { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
@@ -136,71 +174,13 @@ export default function App() {
                   ]}>
                   <SegmentedBar data={d.servicios} />
                 </ChartCard>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-12">
-                <ChartCard className="lg:col-span-7" kicker="Cobertura" title="Pedidos por región de destino"
-                  rows={d.regiones} cols={[
-                    { key: 'nombre', label: 'Región' }, { key: 'zona', label: 'Zona' },
-                    { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                    { key: 'sla_pct', label: 'SLA', fmt: pct, align: 'right' },
-                    { key: 'ingresos', label: 'Ingresos', fmt: peso, align: 'right' },
-                  ]}>
-                  <RankedBars data={d.regiones} value={(r) => r.pedidos} fmt={num}
-                    extra={(r) => [{ label: 'Zona', value: r.zona }, { label: 'SLA', value: pct(r.sla_pct) }, { label: 'Ingresos', value: pesoCorto(r.ingresos) }]} />
-                </ChartCard>
-                <div className="grid gap-4 lg:col-span-5">
-                  <ChartCard kicker="Puntualidad" title="Cumplimiento SLA por zona" delay={0.05}
-                    note="Porcentaje de envíos entregados dentro de la fecha comprometida."
-                    rows={d.zonas} cols={[
-                      { key: 'nombre', label: 'Zona' },
-                      { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                      { key: 'sla_pct', label: 'SLA', fmt: pct, align: 'right' },
-                      { key: 'dias', label: 'Días prom.', fmt: dec, align: 'right' },
-                    ]}>
-                    <RankedBars data={[...d.zonas].sort((a, b) => (b.sla_pct ?? 0) - (a.sla_pct ?? 0))} value={(r) => r.sla_pct} fmt={pct} max={100} labelAll
-                      extra={(r) => [{ label: 'Pedidos', value: num(r.pedidos) }, { label: 'Días hábiles', value: dec(r.dias) }]} />
-                  </ChartCard>
-                  <ChartCard kicker="Canales" title="Pedidos por canal de venta" delay={0.1}
-                    rows={d.canales} cols={[
-                      { key: 'nombre', label: 'Canal' },
-                      { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                      { key: 'ingresos', label: 'Ingresos', fmt: peso, align: 'right' },
-                    ]}>
-                    <RankedBars data={d.canales} value={(r) => r.pedidos} fmt={num}
-                      extra={(r) => [{ label: 'Ingresos', value: pesoCorto(r.ingresos) }]} />
-                  </ChartCard>
-                </div>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-12">
-                <ChartCard className="lg:col-span-6" kicker="Fricción" title="Motivos de incidencia"
-                  note="Un envío entregado también puede haber tenido una incidencia previa."
-                  rows={d.incidencias} cols={[
-                    { key: 'nombre', label: 'Motivo' },
+                <ChartCard className="lg:col-span-5" kicker="Experiencia" title="Calificación de clientes" delay={0.05}
+                  note={`${num(d.calificaciones.reduce((a, b) => a + b.pedidos, 0))} envíos calificados · promedio ${dec(d.kpis.calificacion)} de 5`}
+                  rows={d.calificaciones} cols={[
+                    { key: 'estrellas', label: 'Estrellas', fmt: (v) => `${v}★` },
                     { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
                   ]}>
-                  <RankedBars data={d.incidencias} value={(r) => r.pedidos} fmt={num} />
-                </ChartCard>
-                <ChartCard className="lg:col-span-6" kicker="Carga" title="Contenido declarado" delay={0.05}
-                  rows={d.contenidos} cols={[
-                    { key: 'nombre', label: 'Contenido' },
-                    { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                  ]}>
-                  <RankedBars data={d.contenidos} value={(r) => r.pedidos} fmt={num} />
-                </ChartCard>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-12">
-                <ChartCard className="lg:col-span-5" kicker="Seguimiento" title="Estado actual de los envíos"
-                  rows={d.estados} cols={[
-                    { key: 'nombre', label: 'Estado' },
-                    { key: 'pedidos', label: 'Pedidos', fmt: num, align: 'right' },
-                  ]}>
-                  <RankedBars data={d.estados} value={(r) => r.pedidos} fmt={num} />
-                </ChartCard>
-                <ChartCard className="lg:col-span-7" kicker="Red" title="Top 10 sucursales de origen" delay={0.05}>
-                  <TopSucursales rows={d.sucursales} />
+                  <RatingBars data={d.calificaciones} />
                 </ChartCard>
               </div>
 
@@ -218,51 +198,12 @@ export default function App() {
   )
 }
 
-function TopSucursales({ rows }: { rows: { nombre: string; pedidos: number; ingresos: number; sla_pct: number | null }[] }) {
-  const p = usePaleta()
-  const max = Math.max(...rows.map((r) => r.pedidos), 1)
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[480px] text-sm">
-        <thead>
-          <tr className="border-b border-line text-left text-xs text-muted">
-            <th className="w-8 py-2 font-normal">#</th>
-            <th className="py-2 font-normal">Sucursal</th>
-            <th className="py-2 font-normal">Pedidos</th>
-            <th className="py-2 text-right font-normal">SLA</th>
-            <th className="py-2 text-right font-normal">Ingresos</th>
-          </tr>
-        </thead>
-        <tbody className="tabular">
-          {rows.map((r, i) => (
-            <tr key={r.nombre} className="border-b border-line/60 last:border-0">
-              <td className="py-2.5 font-mono text-xs text-muted">{String(i + 1).padStart(2, '0')}</td>
-              <td className="py-2.5 text-ink">{r.nombre.replace('Starken ', '')}</td>
-              <td className="py-2.5">
-                <div className="flex items-center gap-3">
-                  <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2 sm:w-36">
-                    <div className="h-full rounded-full" style={{ width: `${(r.pedidos / max) * 100}%`, background: p.s[0] }} />
-                  </div>
-                  <span className="text-ink-2">{num(r.pedidos)}</span>
-                </div>
-              </td>
-              <td className="py-2.5 text-right text-ink-2">{pct(r.sla_pct)}</td>
-              <td className="py-2.5 text-right text-ink">{pesoCorto(r.ingresos)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 function Esqueleto() {
   return (
     <div className="grid animate-pulse gap-4 lg:grid-cols-12">
       <div className="h-72 rounded-3xl bg-surface lg:col-span-7" />
       <div className="h-72 rounded-3xl bg-surface lg:col-span-5" />
-      <div className="h-80 rounded-3xl bg-surface lg:col-span-8" />
-      <div className="h-80 rounded-3xl bg-surface lg:col-span-4" />
+      <div className="h-96 rounded-3xl bg-surface lg:col-span-12" />
     </div>
   )
 }

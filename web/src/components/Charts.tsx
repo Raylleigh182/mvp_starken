@@ -1,5 +1,5 @@
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { usePaleta } from '../lib/theme'
 import { Tip } from './Card'
@@ -79,7 +79,7 @@ export function MonthlyBars({ data }: { data: { mes: string; ingresos: number; p
 
 /* ---------------- Barras horizontales ordenadas ---------------- */
 export function RankedBars<T extends { nombre: string }>({
-  data, value, fmt, max, colorIndex = 0, labelAll = false, extra,
+  data, value, fmt, max, colorIndex = 0, labelAll = false, extra, referencia, valueLabel = 'Valor',
 }: {
   data: T[]
   value: (d: T) => number | null
@@ -88,6 +88,8 @@ export function RankedBars<T extends { nombre: string }>({
   colorIndex?: number
   labelAll?: boolean
   extra?: (d: T) => { label: string; value: string }[]
+  referencia?: { value: number; label: string } | null
+  valueLabel?: string
 }) {
   const p = usePaleta()
   const rows = data.map((d) => ({ ...d, _v: value(d) ?? 0 }))
@@ -103,11 +105,15 @@ export function RankedBars<T extends { nombre: string }>({
             content={({ active, payload }) =>
               active && payload?.length ? (
                 <Tip title={payload[0].payload.nombre} items={[
-                  { color: p.s[colorIndex], label: 'Valor', value: fmt(payload[0].payload._v) },
+                  { color: p.s[colorIndex], label: valueLabel, value: fmt(payload[0].payload._v) },
                   ...(extra ? extra(payload[0].payload) : []),
                 ]} />
               ) : null}
           />
+          {referencia && (
+            <ReferenceLine x={referencia.value} stroke={p.ink2} strokeWidth={1} ifOverflow="extendDomain"
+              label={{ value: referencia.label, position: 'insideTopRight', fill: p.ink2, fontSize: 10, offset: 4 }} />
+          )}
           <Bar dataKey="_v" fill={p.s[colorIndex]} radius={[0, 4, 4, 0]} animationDuration={800}>
             <LabelList dataKey="_v" position="right"
               content={(props: any) => (labelAll || props.index === 0) ? (

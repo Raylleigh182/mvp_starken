@@ -88,6 +88,41 @@ export async function getDashboard(s: Seleccion): Promise<Dashboard> {
   return data as Dashboard
 }
 
+/* ---------------- Exploración ---------------- */
+export type Metricas = {
+  pedidos: number
+  ingresos: number
+  ticket: number | null
+  sla_pct: number | null
+  incidencias_pct: number | null
+  calificacion: number | null
+}
+export type Kpis = {
+  pedidos: number; ingresos: number; ticket_promedio: number | null; sla_pct: number | null
+  incidencias_pct: number | null; calificacion: number | null; dias_transito: number | null
+}
+export type PuntoSerie = Metricas & { periodo: string; grupo: string | null }
+export type FilaDesglose = Metricas & { nombre: string; dias: number | null }
+export type Celda = Metricas & { x: string; y: string }
+
+const params = (s: Seleccion) => ({
+  p_desde: s.desde, p_hasta: s.hasta, p_region: s.region, p_servicio: s.servicio, p_canal: s.canal,
+})
+
+async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args)
+  if (error) throw error
+  return data as T
+}
+
+export const getKpis = (s: Seleccion) => rpc<Kpis>('dashboard_kpis', params(s))
+export const getSerie = (s: Seleccion, grano: string, desglose: string | null) =>
+  rpc<PuntoSerie[]>('dashboard_serie', { ...params(s), p_grano: grano, p_desglose: desglose })
+export const getDesglose = (s: Seleccion, dimension: string) =>
+  rpc<FilaDesglose[]>('dashboard_desglose', { ...params(s), p_dimension: dimension })
+export const getMatriz = (s: Seleccion, tipo: string) =>
+  rpc<Celda[]>('dashboard_matriz', { ...params(s), p_tipo: tipo })
+
 export async function rastrear(codigo: string): Promise<Rastreo | null> {
   const { data, error } = await supabase.rpc('rastrear_envio', { p_codigo: Number(codigo) })
   if (error) throw error

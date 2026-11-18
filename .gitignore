@@ -1,0 +1,26 @@
+# Variables de entorno y secretos (NUNCA subir)
+.env
+.env.*
+!.env.example
+
+# SQL de carga generado desde el Excel (datos, no código)
+carga/
+
+# Supabase local
+supabase/.temp/
+supabase/.branches/
+
+# Dependencias y builds
+node_modules/
+dist/
+build/
+.venv/
+venv/
+__pycache__/
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

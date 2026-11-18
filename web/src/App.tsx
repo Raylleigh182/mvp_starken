@@ -34,7 +34,7 @@ export default function App() {
   }, [f, sel.desde, sel.hasta])
 
   return (
-    <div className="grain min-h-dvh overflow-x-clip">
+    <div className="min-h-dvh overflow-x-clip">
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8">
         {/* ---------- Encabezado ---------- */}
         <nav className="flex items-center justify-between py-5">

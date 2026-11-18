@@ -34,7 +34,7 @@ export function FilterBar({
 }) {
   const activo = preset !== 'todo' || sel.region != null || sel.servicio != null || sel.canal != null
   return (
-    <div className="sticky top-0 z-40 -mx-4 border-b border-line bg-page/80 px-4 py-3 backdrop-blur-xl sm:-mx-8 sm:px-8">
+    <div className="sticky top-0 z-40 -mx-4 border-b border-line bg-page/95 px-4 py-3 sm:-mx-8 sm:px-8">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2">
         <div role="radiogroup" aria-label="Periodo" className="flex rounded-full border border-line bg-surface p-1">
           {PRESETS.map((p) => (
